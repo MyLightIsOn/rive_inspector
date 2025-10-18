@@ -1,6 +1,11 @@
 // lib/app/app.dart
 import 'package:flutter/material.dart';
 import 'theme.dart';
+import '../utils/layout.dart';
+import '../features/inspector/widgets/rive_canvas.dart';
+import '../features/inspector/widgets/inspector_panel.dart';
+import '../features/inspector/widgets/transport_bar.dart';
+import '../features/inspector/widgets/fps_badge.dart';
 
 class RiveInspectorApp extends StatelessWidget {
   const RiveInspectorApp({super.key});
@@ -24,31 +29,23 @@ class _HomeScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mini Rive Inspector')),
-      body: Row(
-        children: const [
-          Expanded(
-            child: ColoredBox(
-              color: Colors.black12,
-              child: Center(child: Text('Canvas', style: TextStyle(fontSize: 18))),
-            ),
-          ),
-          SizedBox(
-            width: 340,
-            child: ColoredBox(
-              color: Color(0xFFF7F7F7),
-              child: Center(child: Text('Inspector Panel', style: TextStyle(fontSize: 16))),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          height: 56,
-          alignment: Alignment.center,
-          child: const Text('Transport Bar'),
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Row(
+          children: const [
+            SizedBox(width: 12),
+            Text('Mini Rive Inspector'),
+            Spacer(),
+            FpsBadge(), // placeholder until Step 7
+            SizedBox(width: 12),
+          ],
         ),
       ),
+      body: SplitView(
+        left: const RiveCanvas(),
+        right: const InspectorPanel(),
+      ),
+      bottomNavigationBar: const SafeArea(child: TransportBar()),
     );
   }
 }
