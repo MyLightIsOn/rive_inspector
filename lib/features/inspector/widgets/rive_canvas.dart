@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rive/rive.dart';
 import '../state/inspector_state.dart';
+import '../state/fps_state.dart';
 
 class RiveCanvas extends ConsumerStatefulWidget {
   const RiveCanvas({super.key});
@@ -11,27 +13,47 @@ class RiveCanvas extends ConsumerStatefulWidget {
   ConsumerState<RiveCanvas> createState() => _RiveCanvasState();
 }
 
-class _RiveCanvasState extends ConsumerState<RiveCanvas> {
+class _RiveCanvasState extends ConsumerState<RiveCanvas>
+    with SingleTickerProviderStateMixin {
   Artboard? _artboard;
   RiveAnimationController? _controller;
   String? _stateMachineName;
+
+  late final Ticker _ticker;
+  Duration? _lastTick;
 
   @override
   void initState() {
     super.initState();
     _loadRive();
+
+    _ticker = createTicker((elapsed) {
+      final now = elapsed;
+      final last = _lastTick;
+      _lastTick = now;
+      if (last != null) {
+        final dt = (now - last).inMicroseconds / 1e6; // seconds
+        ref.read(fpsProvider.notifier).onTick(dt);
+      }
+    });
+    _ticker.start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRive() async {
     try {
-      final data = await rootBundle.load('/rive/vehicles.riv');
+      final data = await rootBundle.load('assets/rive/vehicles.riv');
       final file = RiveFile.import(data);
       final artboard = file.mainArtboard;
 
       RiveAnimationController? controller;
       String? smName;
 
-      // Prefer a state machine if available; otherwise fall back to first animation.
       final machines = artboard.stateMachines;
       if (machines.isNotEmpty) {
         smName = machines.first.name;
@@ -52,16 +74,14 @@ class _RiveCanvasState extends ConsumerState<RiveCanvas> {
         _stateMachineName = smName;
       });
 
-      // Publish to provider (only pass a StateMachineController if we actually have one)
-      StateMachineController? smForProvider;
-      if (controller is StateMachineController) {
-        smForProvider = controller;
-      }
+      ref.read(fpsProvider.notifier).reset();
 
+      // Publish to provider (tell it which controller is active).
       ref.read(inspectorProvider.notifier).loadFromArtboard(
         artboard: artboard,
         stateMachineName: smName,
-        controller: smForProvider,
+        controller: (controller is StateMachineController) ? controller : null,
+        activeController: controller,
       );
     } catch (e) {
       debugPrint('Failed to load Rive: $e');
@@ -70,10 +90,12 @@ class _RiveCanvasState extends ConsumerState<RiveCanvas> {
         _controller = null;
         _stateMachineName = null;
       });
+      ref.read(fpsProvider.notifier).reset();
       ref.read(inspectorProvider.notifier).loadFromArtboard(
         artboard: null,
         stateMachineName: null,
         controller: null,
+        activeController: null,
       );
     }
   }
