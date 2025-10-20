@@ -24,7 +24,7 @@ class _RiveCanvasState extends ConsumerState<RiveCanvas> {
 
   Future<void> _loadRive() async {
     try {
-      final data = await rootBundle.load('/rive/example.riv');
+      final data = await rootBundle.load('/rive/vehicles.riv');
       final file = RiveFile.import(data);
       final artboard = file.mainArtboard;
 
