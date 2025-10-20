@@ -1,19 +1,20 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rive/rive.dart';
+import '../state/inspector_state.dart';
 
-class RiveCanvas extends StatefulWidget {
+class RiveCanvas extends ConsumerStatefulWidget {
   const RiveCanvas({super.key});
 
   @override
-  State<RiveCanvas> createState() => _RiveCanvasState();
+  ConsumerState<RiveCanvas> createState() => _RiveCanvasState();
 }
 
-class _RiveCanvasState extends State<RiveCanvas> {
+class _RiveCanvasState extends ConsumerState<RiveCanvas> {
   Artboard? _artboard;
-  RiveAnimationController<dynamic>? _controller;
-  String? _stateMachineName; // if we found one
+  RiveAnimationController? _controller;
+  String? _stateMachineName;
 
   @override
   void initState() {
@@ -23,42 +24,57 @@ class _RiveCanvasState extends State<RiveCanvas> {
 
   Future<void> _loadRive() async {
     try {
-      final bytes = await rootBundle.load('rive/skills.riv');
-      final file = RiveFile.import(bytes);
+      final data = await rootBundle.load('/rive/example.riv');
+      final file = RiveFile.import(data);
       final artboard = file.mainArtboard;
 
-      // Try to find a state machine first (preferred for our inspector).
-      // If none exists, fall back to the first animation.
       RiveAnimationController? controller;
+      String? smName;
 
-      // Collect state machines via artboard.stateMachines
+      // Prefer a state machine if available; otherwise fall back to first animation.
       final machines = artboard.stateMachines;
       if (machines.isNotEmpty) {
-        _stateMachineName = machines.first.name;
-        controller = StateMachineController.fromArtboard(
-          artboard,
-          _stateMachineName!,
-        );
-        if (controller != null) {
-          artboard.addController(controller);
+        smName = machines.first.name;
+        final smController = StateMachineController.fromArtboard(artboard, smName);
+        if (smController != null) {
+          artboard.addController(smController);
+          controller = smController;
         }
       } else if (artboard.animations.isNotEmpty) {
-        controller = SimpleAnimation(artboard.animations.first.name);
-        artboard.addController(controller);
+        final anim = SimpleAnimation(artboard.animations.first.name);
+        artboard.addController(anim);
+        controller = anim;
       }
 
       setState(() {
         _artboard = artboard;
         _controller = controller;
+        _stateMachineName = smName;
       });
+
+      // Publish to provider (only pass a StateMachineController if we actually have one)
+      StateMachineController? smForProvider;
+      if (controller is StateMachineController) {
+        smForProvider = controller;
+      }
+
+      ref.read(inspectorProvider.notifier).loadFromArtboard(
+        artboard: artboard,
+        stateMachineName: smName,
+        controller: smForProvider,
+      );
     } catch (e) {
       debugPrint('Failed to load Rive: $e');
-      if (mounted) {
-        setState(() {
-          _artboard = null;
-          _controller = null;
-        });
-      }
+      setState(() {
+        _artboard = null;
+        _controller = null;
+        _stateMachineName = null;
+      });
+      ref.read(inspectorProvider.notifier).loadFromArtboard(
+        artboard: null,
+        stateMachineName: null,
+        controller: null,
+      );
     }
   }
 
@@ -69,31 +85,28 @@ class _RiveCanvasState extends State<RiveCanvas> {
     }
     return Stack(
       children: [
-        Positioned.fill(
-          child: Rive(artboard: _artboard!),
-        ),
-        Positioned(
-          left: 12,
-          bottom: 12,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withOpacity(0.8),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Text(
-                _stateMachineName != null
-                    ? 'State Machine: $_stateMachineName'
-                    : 'Animation: ${(_controller is SimpleAnimation) ? ( _artboard!.animations.first.name ) : 'None'}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurface,
+        Positioned.fill(child: Rive(artboard: _artboard!)),
+        if (_stateMachineName != null)
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Text(
+                  'State Machine: $_stateMachineName',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
